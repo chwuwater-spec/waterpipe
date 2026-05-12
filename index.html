@@ -30,6 +30,30 @@ body{background:var(--bg);color:var(--text);font-family:'Noto Sans TC',sans-seri
 .search-input::placeholder{color:var(--dim);}
 .search-icon{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--dim);font-size:16px;pointer-events:none;}
 .filter-select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 8px;color:var(--text);font-size:12px;font-family:'Noto Sans TC',sans-serif;outline:none;cursor:pointer;}
+.nl-wrap{display:flex;gap:6px;}
+.nl-input{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:13px;font-family:'Noto Sans TC',sans-serif;outline:none;transition:border-color 0.2s;min-width:0;}
+.nl-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,212,255,0.08);}
+.nl-input::placeholder{color:var(--dim);font-size:12px;}
+.nl-btn{background:linear-gradient(135deg,#00d4ff,#0077b6);border:none;color:#000;width:40px;border-radius:8px;cursor:pointer;font-size:15px;font-weight:700;transition:transform 0.1s;flex-shrink:0;}
+.nl-btn:active{transform:scale(0.94);}
+.nl-divider{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--dim);font-family:'JetBrains Mono',monospace;margin:2px 0;}
+.nl-divider::before,.nl-divider::after{content:'';flex:1;height:1px;background:var(--border);}
+.nl-result{font-size:11px;padding:8px 10px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);line-height:1.55;}
+.nl-result.success{border-left:3px solid var(--green);}
+.nl-result.error{border-left:3px solid var(--orange);}
+.nl-result-label{font-size:10px;color:var(--dim);font-family:'JetBrains Mono',monospace;margin-bottom:4px;}
+.nl-chip{display:inline-block;padding:1px 7px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:10.5px;margin:1px 2px 1px 0;background:rgba(107,125,153,0.18);color:var(--text);}
+.nl-chip.accent{background:var(--accent-dim);color:var(--accent);}
+.nl-chip.green{background:rgba(74,222,128,0.18);color:var(--green);}
+.nl-answer{margin-top:8px;padding:8px 10px;border-radius:6px;background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.3);}
+.nl-answer-lbl{font-size:10px;color:var(--dim);font-family:'JetBrains Mono',monospace;margin-bottom:2px;}
+.nl-answer-val{font-size:17px;font-weight:700;color:var(--green);font-family:'JetBrains Mono',monospace;}
+.nl-answer-unit{font-size:11px;color:var(--dim);margin-left:4px;font-weight:400;}
+.nl-examples{margin-top:4px;}
+.nl-examples .ex{display:block;color:var(--accent);cursor:pointer;padding:3px 0;font-family:'Noto Sans TC',sans-serif;font-size:11.5px;}
+.nl-examples .ex:hover{text-decoration:underline;}
+thead th.ask-col{background:var(--accent-dim)!important;color:var(--accent);box-shadow:inset 0 -2px 0 var(--accent);}
+tbody td.ask-col{background:rgba(0,212,255,0.08);color:var(--accent);font-weight:700;}
 .table-list{flex:1;overflow-y:auto;padding:8px;}
 .table-item{padding:11px 12px;border-radius:8px;border:1px solid transparent;cursor:pointer;margin-bottom:4px;transition:all 0.15s;}
 .table-item:hover{background:var(--surface2);border-color:var(--border);}
@@ -155,6 +179,13 @@ tbody tr:hover td{background:rgba(255,255,255,0.02);}
   <div class="sidebar-overlay" onclick="toggleSidebar(false)"></div>
   <div class="sidebar">
     <div class="search-area">
+      <div class="nl-wrap">
+        <input type="text" class="nl-input" id="nl-input" placeholder="問句：彎管 DN300 90度多長"
+               onkeydown="if(event.key==='Enter')runNLQuery()">
+        <button class="nl-btn" onclick="runNLQuery()" title="解析問句">✨</button>
+      </div>
+      <div class="nl-result" id="nl-result" style="display:none"></div>
+      <div class="nl-divider">或手動篩選</div>
       <select class="search-input" id="search-input" onchange="doSearch()">
         <option value="">全部規格</option>
       </select>
@@ -205,6 +236,8 @@ let currentId = null;
 let searchQuery = '';
 let filterDn = '';
 let lbTableId = null, lbIdx = 0;
+let nlAngleFilter = null;  // 彎管角度（NL parser 設定）
+let nlAskCol = null;       // 使用者問句中想看的欄位 key（用於高亮表頭）
 
 
 // 手機 sidebar 抽屜開關
@@ -265,6 +298,8 @@ function renderTableList(tables) {
 function doSearch() {
   searchQuery = document.getElementById('search-input').value.trim().toLowerCase();
   filterDn = document.getElementById('filter-dn').value;
+  // 使用者動了下拉 → 清掉 NL parser 的角度過濾（但保留欄位高亮）
+  nlAngleFilter = null;
 
   const matched = DB.filter(t => {
     // 取得這個表格中符合條件的rows
@@ -296,6 +331,8 @@ function getFilteredRows(t) {
   let rows = t.rows;
   // 管徑篩選
   if(filterDn) rows = rows.filter(r => String(r.D) === filterDn);
+  // NL 角度篩選（僅彎管 T07）
+  if(nlAngleFilter && t.id === 'T07') rows = rows.filter(r => r['角度'] === nlAngleFilter);
   // 文字搜尋：若名稱已符合，顯示全部（符合管徑的）rows；名稱不符才逐row篩選
   if(searchQuery) {
     const nameOk = t.name_zh.toLowerCase().includes(searchQuery) ||
@@ -386,8 +423,8 @@ function showTable(id) {
     </div>
     <div class="table-area">
       <table>
-        <thead><tr>${cols.map(c=>`<th>${HEADER_MAP[c]||c}</th>`).join('')}</tr></thead>
-        <tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${hl(r[c])}</td>`).join('')}</tr>`).join('')}</tbody>
+        <thead><tr>${cols.map(c=>`<th${nlAskCol&&c===nlAskCol?' class="ask-col"':''}>${HEADER_MAP[c]||c}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td${nlAskCol&&c===nlAskCol?' class="ask-col"':''}>${hl(r[c])}</td>`).join('')}</tr>`).join('')}</tbody>
       </table>
       ${t.notes&&t.notes.length?`<div class="notes"><div class="notes-title">📝 注記</div>${t.notes.map(n=>`<p>${n}</p>`).join('')}</div>`:''}
       ${imgHtml}
@@ -415,6 +452,242 @@ document.addEventListener('keydown',e=>{
   if(e.key==='ArrowLeft') lbNav(-1);
   if(e.key==='ArrowRight') lbNav(1);
 });
+
+// ================== 自然語言查詢 parser ==================
+
+// 表名 → 別名（用於關鍵字比對；判定順序：法蘭優先 > 各別表 > T字管通用 fallback）
+const NL_TABLE_ALIASES = [
+  // 法蘭/附法蘭 系列要先判，避免被「T字管」搶走
+  {id:'T10', keys:['附法蘭','法蘭T','法蘭t','法蘭三通','消火栓','空氣閥','人孔']},
+  {id:'T18', keys:['T形頭螺栓','頭螺栓','螺栓','螺帽','螺絲','螺紋公稱','螺紋呼び']},
+  {id:'T19', keys:['橡膠環','止水環','膠圈','膠環','O形環','O形圈','O圈','o-ring']},
+  {id:'T17', keys:['壓環','押輪','押環']},
+  {id:'T14', keys:['套筒','sleeve']},
+  {id:'T15', keys:['短管','短管甲','短管乙']},
+  {id:'T07', keys:['彎管','彎頭','elbow','bend']},
+  {id:'T06', keys:['異徑管','異徑','變徑','縮管','reducer']},
+  {id:'T05', keys:['雙承口T','雙承T','雙承口','雙T','T字管','T管','三通']},
+  {id:'T03', keys:['異形管','異形','承口突部','突部']},
+  {id:'T02', keys:['直管','直線管','直線']},
+];
+
+// 欄位 key → 別名
+const NL_COL_ALIASES = [
+  {col:'ボルト數',      keys:['螺栓數','幾根螺栓','螺栓幾顆','螺絲數','螺絲幾根','ボルト数','ボルト數']},
+  {col:'ボルト穴數',    keys:['螺栓孔數','螺孔數','穴數','孔數']},
+  {col:'ボルト呼び',    keys:['螺栓公稱','螺紋公稱','螺栓規格','螺絲規格','螺紋呼び','螺栓呼び']},
+  {col:'1セット數',     keys:['每組數','一組幾','成組']},
+  {col:'管心長_l',      keys:['管心長','中心長','心長','管心']},
+  {col:'L1',           keys:['L1','l1']},
+  {col:'L2',           keys:['L2','l2']},
+  {col:'L',            keys:['長度','總長','長']},
+  {col:'R',            keys:['彎曲半徑','半徑','R值']},
+  {col:'角度',         keys:['角度','幾度']},
+  {col:'質量_受口突部', keys:['受口突部質量','承口突部質量','突部質量','突部重量']},
+  {col:'質量_受挿し',   keys:['承插質量','受挿質量','受插質量']},
+  {col:'質量_挿し受',   keys:['插承質量','挿受質量','插受質量']},
+  {col:'質量',         keys:['質量','重量','多重','幾公斤','kg','幾kg']},
+  {col:'T',            keys:['壁厚','管厚','厚度','管壁','T厚']},
+  {col:'t1',           keys:['t1','T1']},
+  {col:'D',            keys:['外徑','管外徑','D外']},
+  {col:'B',            keys:['B值']},
+  {col:'C',            keys:['C值']},
+  {col:'E',            keys:['E值']},
+  {col:'K',            keys:['K值']},
+  {col:'P',            keys:['P值']},
+  {col:'M',            keys:['M值']},
+  {col:'H',            keys:['H值']},
+  {col:'J',            keys:['J值']},
+];
+
+// 欄位單位
+const COL_UNITS = {
+  'ボルト數':'根','ボルト穴數':'孔','ボルト呼び':'','1セット數':'組',
+  '管心長_l':'mm','L':'mm','L1':'mm','L2':'mm','R':'mm','T':'mm','t':'mm','t1':'mm',
+  'D':'mm','D1':'mm','D2':'mm','D3':'mm','D4':'mm','D5':'mm','d':'mm',
+  'B':'mm','C':'mm','E':'mm','K':'mm','P':'mm','M':'mm','H':'mm','I':'mm','J':'mm',
+  '角度':'',
+  '質量':'kg','質量_受口突部':'kg','質量_受挿し':'kg','質量_挿し受':'kg',
+};
+
+function parseNLQuery(q) {
+  const result = {tableId:null, dn:null, angle:null, askCol:null, askColLabel:null, tableName:null};
+  if(!q) return result;
+
+  // 1) 表名
+  for(const {id, keys} of NL_TABLE_ALIASES) {
+    for(const k of keys) {
+      if(q.includes(k)) {
+        result.tableId = id;
+        const t = DB.find(x=>x.id===id);
+        result.tableName = t ? t.name_zh : id;
+        break;
+      }
+    }
+    if(result.tableId) break;
+  }
+
+  // 2) 角度（彎管專用，先抽掉避免被當 DN）
+  let qForDn = q;
+  const angleM = q.match(/(\d+(?:\.\d+)?)\s*[度°]/);
+  if(angleM) {
+    result.angle = angleM[1] + '°';
+    qForDn = q.replace(angleM[0], ' ');
+  }
+
+  // 3) DN 管徑
+  let m = qForDn.match(/DN\s*(\d+)/i)
+       || qForDn.match(/(\d{2,4})\s*mm/)
+       || qForDn.match(/(?:管徑|徑|口徑)\s*[:：]?\s*(\d+)/)
+       || qForDn.match(/(\d+)\s*(?:管徑|徑|口徑)/);
+  if(m) {
+    result.dn = m[1];
+  } else {
+    // 寬鬆 fallback：抓第一個 50-3000 的數字
+    const nums = qForDn.match(/\d{2,4}/g);
+    if(nums) {
+      for(const n of nums) {
+        const v = Number(n);
+        if(v>=50 && v<=3000) { result.dn = String(v); break; }
+      }
+    }
+  }
+
+  // 4) 欲查欄位
+  for(const {col, keys} of NL_COL_ALIASES) {
+    for(const k of keys) {
+      if(q.includes(k)) {
+        result.askCol = col;
+        result.askColLabel = HEADER_MAP[col] || col;
+        break;
+      }
+    }
+    if(result.askCol) break;
+  }
+
+  // 表名沒抓到但有問螺栓/螺紋 → 預設 T18
+  if(!result.tableId && result.askCol && ['ボルト呼び','1セット數'].includes(result.askCol)) {
+    result.tableId = 'T18';
+    result.tableName = 'T形頭螺栓・螺帽';
+  }
+
+  // 欄位 fallback：askCol 若不在該表 columns 內，依表別轉成最接近的欄位
+  if(result.tableId && result.askCol) {
+    const t = DB.find(x=>x.id===result.tableId);
+    if(t && !t.columns.includes(result.askCol)) {
+      const FALLBACK = {
+        'T07': {'L':'管心長_l'},                    // 彎管：長 → 管心長_l
+        'T05': {'L1':'L','L2':'L','管心長_l':'L'},  // 雙承口T字管：只有 L
+        'T14': {'L1':'L','L2':'L','管心長_l':'L'},  // 套筒：只有 L
+        'T15': {'L':'L1','管心長_l':'L1'},          // 短管：L→L1
+        'T02': {'T':'t1'},                          // 直管：T→t1
+        'T19': {'L':'L'},
+      };
+      const map = FALLBACK[result.tableId] || {};
+      if(map[result.askCol]) {
+        result.askCol = map[result.askCol];
+        result.askColLabel = HEADER_MAP[result.askCol] || result.askCol;
+      } else {
+        // 仍找不到 → 清掉避免誤導
+        result.askCol = null;
+        result.askColLabel = null;
+      }
+    }
+  }
+
+  return result;
+}
+
+function renderNLChips(p) {
+  const chips = [];
+  if(p.tableName) chips.push(`<span class="nl-chip accent">${p.tableName}</span>`);
+  if(p.dn) chips.push(`<span class="nl-chip">DN${p.dn}</span>`);
+  if(p.angle) chips.push(`<span class="nl-chip">${p.angle}</span>`);
+  if(p.askColLabel) chips.push(`<span class="nl-chip green">看：${p.askColLabel}</span>`);
+  return chips.join('');
+}
+
+function findDirectAnswer(p) {
+  if(!p.tableId || !p.askCol) return null;
+  const t = DB.find(x=>x.id===p.tableId);
+  if(!t || !t.columns.includes(p.askCol)) return null;
+  let rows = t.rows;
+  if(p.dn) rows = rows.filter(r=>String(r.D)===p.dn);
+  if(p.angle && t.id==='T07') rows = rows.filter(r=>r['角度']===p.angle);
+  if(rows.length !== 1) return null;
+  const val = rows[0][p.askCol];
+  if(val===null||val===undefined||val==='') return null;
+  return {label: HEADER_MAP[p.askCol]||p.askCol, val, unit: COL_UNITS[p.askCol]||''};
+}
+
+const NL_EXAMPLES = [
+  '彎管 DN300 90度多長',
+  '直管 DN200 螺栓數',
+  'T形頭螺栓 DN300 螺紋公稱',
+  '異形管 DN150 質量',
+];
+
+function showNLResult(html, kind) {
+  const box = document.getElementById('nl-result');
+  box.className = 'nl-result ' + (kind||'');
+  box.innerHTML = html;
+  box.style.display = '';
+}
+
+function hideNLResult() {
+  document.getElementById('nl-result').style.display = 'none';
+}
+
+function fillNLExample(s) {
+  document.getElementById('nl-input').value = s;
+  runNLQuery();
+}
+
+function runNLQuery() {
+  const q = document.getElementById('nl-input').value.trim();
+  if(!q) { hideNLResult(); return; }
+  const p = parseNLQuery(q);
+
+  if(!p.tableId) {
+    const exs = NL_EXAMPLES.map(s=>`<span class="ex" onclick="fillNLExample('${s}')">→ ${s}</span>`).join('');
+    showNLResult(
+      `<div class="nl-result-label">看不懂這個問句，試試這些範例：</div><div class="nl-examples">${exs}</div>`,
+      'error'
+    );
+    return;
+  }
+
+  // 同步管徑下拉、清空名稱搜尋
+  document.getElementById('search-input').value = '';
+  searchQuery = '';
+  const dnSel = document.getElementById('filter-dn');
+  if(p.dn && [...dnSel.options].some(o=>o.value===p.dn)) {
+    dnSel.value = p.dn;
+    filterDn = p.dn;
+  } else {
+    dnSel.value = '';
+    filterDn = '';
+  }
+
+  nlAngleFilter = (p.tableId==='T07') ? p.angle : null;
+  nlAskCol = p.askCol;
+
+  // 選表 + 渲染
+  currentId = p.tableId;
+  renderTableList(DB);
+  showTable(p.tableId);
+  if(window.innerWidth <= 768) toggleSidebar(false);
+
+  // 結果區
+  const answer = findDirectAnswer(p);
+  let html = `<div class="nl-result-label">✨ 解析結果</div>${renderNLChips(p)}`;
+  if(answer) {
+    html += `<div class="nl-answer"><div class="nl-answer-lbl">DN${p.dn}${p.angle?' · '+p.angle:''} 的 ${answer.label}</div><div class="nl-answer-val">${answer.val}<span class="nl-answer-unit">${answer.unit}</span></div></div>`;
+  } else if(p.dn && p.askCol) {
+    html += `<div class="nl-result-label" style="margin-top:6px;">⚠️ 找不到對應單筆資料（DN 不存在或欄位不適用），請看下方表格</div>`;
+  }
+  showNLResult(html, 'success');
+}
 
 init();
 </script>
