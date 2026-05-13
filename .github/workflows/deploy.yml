@@ -20,4 +20,6 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy . --project-name=waterpipe --branch=main --commit-dirty=true
+          # --commit-message 用 ASCII-only 字串繞過 Cloudflare API 對多字節
+          # UTF-8 的 reject（中文 / em dash 會被擋）。真實 commit 訊息仍在 GitHub。
+          command: pages deploy . --project-name=waterpipe --branch=main --commit-dirty=true --commit-hash=${{ github.sha }} --commit-message="deploy ${{ github.sha }}"
