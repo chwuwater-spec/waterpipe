@@ -23,6 +23,8 @@
 body{background:var(--bg);color:var(--text);font-family:'Noto Sans TC',sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
 .header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;gap:16px;flex-shrink:0;}
 .logo{background:linear-gradient(135deg,#00d4ff,#0077b6);color:#000;font-weight:700;font-size:16px;width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;flex-shrink:0;}
+.brand{display:flex;align-items:center;gap:12px;cursor:pointer;transition:opacity .15s;user-select:none;}
+.brand:hover{opacity:.75;}
 .header-title{font-size:15px;font-weight:500;}
 .header-sub{font-size:11px;color:var(--dim);margin-top:1px;}
 .header-stats{margin-left:auto;display:flex;gap:20px;align-items:center;}
@@ -172,10 +174,12 @@ tbody tr:hover td{background:rgba(255,255,255,0.02);}
 </head>
 <body>
 <div class="header"><button class="menu-btn" onclick="toggleSidebar()" aria-label="選單">☰</button>
-  <div class="logo">K</div>
-  <div>
-    <div class="header-title">K形延性鑄鐵管規格</div>
-    <div class="header-sub">JDPA G 3004 | 日本水道協會規格</div>
+  <div class="brand" onclick="goHome()" title="回首頁">
+    <div class="logo">K</div>
+    <div>
+      <div class="header-title">K形延性鑄鐵管規格</div>
+      <div class="header-sub">JDPA G 3004 | 日本水道協會規格</div>
+    </div>
   </div>
   <div class="header-stats">
     <div class="hstat"><div class="hstat-val" id="stat-tables">—</div><div class="hstat-lbl">規格表</div></div>
@@ -247,6 +251,23 @@ let lbTableId = null, lbIdx = 0;
 let nlAngleFilter = null;  // 彎管角度（NL parser 設定）
 let nlAskCol = null;       // 使用者問句中想看的欄位 key（用於高亮表頭）
 
+
+// 回首頁：清掉所有篩選與選擇，回到主畫面
+function goHome() {
+  currentId = null;
+  searchQuery = '';
+  filterDn = '';
+  nlAngleFilter = null;
+  nlAskCol = null;
+  const nl = document.getElementById('nl-input'); if(nl) nl.value = '';
+  const si = document.getElementById('search-input'); if(si) si.value = '';
+  const fd = document.getElementById('filter-dn'); if(fd) fd.value = '';
+  hideNLResult();
+  document.getElementById('result-summary').textContent = '';
+  renderTableList(DB);
+  showOverviewPanel();
+  if(window.innerWidth <= 768) toggleSidebar(false);
+}
 
 // 手機 sidebar 抽屜開關
 function toggleSidebar(open) {
