@@ -62,7 +62,11 @@ def build_t08(t08_full: dict) -> dict:
         "columns": ["D", "角度", "L", "H"],
         "unit": "mm",
         "rows": rows,
-        "notes": "A形 D=75~350、K形 D=75~2600 共用本表；waterpipe 為 K形專案，全收。'—' = JDPA 規格本來就沒做。D=2600 11.25°/5.625° L/H 數值偏小，同 T07 規律。",
+        "notes": [
+            "A形 D=75~350、K形 D=75~2600 共用本表；waterpipe 為 K形專案，全收。",
+            "'—' = JDPA 規格本來就沒做。",
+            "D=2600 11.25°/5.625° L/H 數值偏小，同 T07 規律。",
+        ],
     }
 
 
@@ -76,11 +80,21 @@ def patch_js_aliases(html: str) -> str:
     assert old_t07_line in html, "T07 keyword line not found"
     html = html.replace(old_t07_line, new_lines, 1)
 
-    # 2. NL 角度篩選 — 擴大到 T07 + T08
+    # 2a. NL 角度篩選 — getFilteredRows 端
     old_filter = "if(nlAngleFilter && t.id === 'T07') rows = rows.filter(r => r['角度'] === nlAngleFilter);"
     new_filter = "if(nlAngleFilter && (t.id === 'T07' || t.id === 'T08')) rows = rows.filter(r => r['角度'] === nlAngleFilter);"
-    assert old_filter in html, "angle filter line not found"
-    html = html.replace(old_filter, new_filter, 1)
+    if old_filter in html:
+        html = html.replace(old_filter, new_filter, 1)
+    else:
+        assert new_filter in html, "neither old nor new angle filter line found"
+
+    # 2b. NL 角度篩選 — runNLQuery 設值端（沒這條 T08 NL 查詢角度不會生效）
+    old_set = "nlAngleFilter = (p.tableId==='T07') ? p.angle : null;"
+    new_set = "nlAngleFilter = (p.tableId==='T07' || p.tableId==='T08') ? p.angle : null;"
+    if old_set in html:
+        html = html.replace(old_set, new_set, 1)
+    else:
+        assert new_set in html, "neither old nor new angle filter setter found"
 
     # 3. NL FALLBACK：T08 只有 L/H，把 管心長_l/L1/L2 都映到 L
     old_fallback = "'T07': {'L':'管心長_l'},                    // 彎管：長 → 管心長_l"
