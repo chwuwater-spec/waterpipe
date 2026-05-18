@@ -7,7 +7,7 @@
  * On activate: deletes old caches so stale assets get purged.
  */
 
-const CACHE_VERSION = 'wp-v1-2026-05-13';
+const CACHE_VERSION = 'wp-v2-2026-05-18';
 const PRECACHE = [
   './',
   './index.html',
